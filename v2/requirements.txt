@@ -1,0 +1,8 @@
+pyautogui
+pytesseract
+Pillow
+mss
+pyyaml
+pandas
+openpyxl
+pyinstaller

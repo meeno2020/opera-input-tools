@@ -1,0 +1,98 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'          # trigger on version tags, e.g. v1.0.0
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+
+  # ── macOS ──────────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Tesseract
+        run: brew install tesseract
+
+      - name: Install Python dependencies
+        run: pip install -r v2/requirements.txt
+
+      - name: Build macOS app
+        working-directory: v2
+        run: pyinstaller opera_input_tools.spec
+
+      - name: Zip .app bundle
+        working-directory: v2/dist
+        run: zip -r "Opera-Input-Tools-macOS.zip" "Opera Input Tools.app"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Opera-Input-Tools-macOS
+          path: v2/dist/Opera-Input-Tools-macOS.zip
+          retention-days: 30
+
+  # ── Windows ────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Tesseract
+        run: choco install tesseract --yes
+
+      - name: Install Python dependencies
+        run: pip install -r v2/requirements.txt
+
+      - name: Build Windows exe
+        working-directory: v2
+        run: pyinstaller opera_input_tools.spec
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Opera-Input-Tools-Windows
+          path: v2/dist/Opera Input Tools.exe
+          retention-days: 30
+
+  # ── Create GitHub Release (on tag push only) ───────────────────────────────
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Opera-Input-Tools-macOS
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Opera-Input-Tools-Windows
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Opera-Input-Tools-macOS.zip
+            Opera Input Tools.exe
+          generate_release_notes: true
