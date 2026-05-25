@@ -33,13 +33,13 @@ jobs:
 
       - name: Zip .app bundle
         working-directory: v2/dist
-        run: zip -r "Opera-Input-Tools-macOS.zip" "Opera Input Tools.app"
+        run: zip -r "Data-Batch-Entry-System-macOS.zip" "Opera Input Tools.app"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Opera-Input-Tools-macOS
-          path: v2/dist/Opera-Input-Tools-macOS.zip
+          name: Data-Batch-Entry-System-macOS
+          path: v2/dist/Data-Batch-Entry-System-macOS.zip
           retention-days: 30
 
   # ── Windows ────────────────────────────────────────────────────────────────
@@ -68,8 +68,8 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Opera-Input-Tools-Windows
-          path: v2/dist/Opera Input Tools.exe
+          name: Data-Batch-Entry-System-Windows
+          path: "v2/dist/Data Batch Entry System.exe"
           retention-days: 30
 
   # ── Create GitHub Release (on tag push only) ───────────────────────────────
@@ -84,17 +84,17 @@ jobs:
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: Opera-Input-Tools-macOS
+          name: Data-Batch-Entry-System-macOS
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: Opera-Input-Tools-Windows
+          name: Data-Batch-Entry-System-Windows
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Opera-Input-Tools-macOS.zip
-            Opera Input Tools.exe
+            Data-Batch-Entry-System-macOS.zip
+            Data Batch Entry System.exe
           generate_release_notes: true

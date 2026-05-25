@@ -1,8 +1,9 @@
 """
-Opera Input Tools v2
+Data Batch Entry System v2
 """
 import os
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -15,12 +16,18 @@ from workflow_executor import WorkflowExecutor
 from v5_executor       import V5WorkflowExecutor
 from ocr_engine        import get_all_displays
 
+APP_NAME    = "Data Batch Entry System"
+APP_VERSION = "1.0.0"
+APP_COMPANY = "Sanya Hegu Data Operations Co., Ltd."
+APP_AUTHOR  = "Jianbo Zhang"
+APP_GITHUB  = "https://github.com/meeno2020/opera-input-tools"
+
 
 class App:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Opera Input Tools")
+        self.root.title(f"{APP_NAME}  v{APP_VERSION}")
         self.root.geometry("1000x760")
 
         self.data_loader     = DataLoader()
@@ -35,6 +42,7 @@ class App:
     # ── Build ─────────────────────────────────────────────────────────────────
 
     def _build(self):
+        self._build_menu()
         nb = ttk.Notebook(self.root)
         nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         self._tab_annotation(nb)
@@ -42,6 +50,50 @@ class App:
         self._tab_workflow(nb)
         self._tab_execution(nb)
         self._tab_v5(nb)
+
+    def _build_menu(self):
+        menubar = tk.Menu(self.root)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="About", command=self._show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        self.root.config(menu=menubar)
+
+    def _show_about(self):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("About")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        # Center on parent
+        dlg.update_idletasks()
+        pw = self.root.winfo_x() + self.root.winfo_width()  // 2
+        ph = self.root.winfo_y() + self.root.winfo_height() // 2
+        dlg.geometry(f"380x260+{pw - 190}+{ph - 130}")
+
+        pad = dict(padx=20, pady=6)
+
+        tk.Label(dlg, text=APP_NAME,
+                 font=("Arial", 15, "bold")).pack(pady=(24, 2))
+        tk.Label(dlg, text=f"Version  {APP_VERSION}",
+                 font=("Arial", 10), fg="#555").pack()
+
+        ttk.Separator(dlg, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=20, pady=12)
+
+        tk.Label(dlg, text=APP_COMPANY,
+                 font=("Arial", 10)).pack(**pad)
+        tk.Label(dlg, text=f"Author:  {APP_AUTHOR}",
+                 font=("Arial", 10)).pack(**pad)
+
+        # Clickable GitHub link
+        link = tk.Label(dlg, text=APP_GITHUB,
+                        font=("Arial", 9), fg="#0066cc", cursor="hand2")
+        link.pack(pady=(0, 4))
+        link.bind("<Button-1>", lambda e: webbrowser.open(APP_GITHUB))
+
+        ttk.Button(dlg, text="OK", command=dlg.destroy,
+                   width=10).pack(pady=(10, 20))
+        dlg.bind("<Return>", lambda e: dlg.destroy())
+        dlg.bind("<Escape>", lambda e: dlg.destroy())
 
     # ═════════════════════════════════════════════════════════════════════════
     # Tab 1 – Button Annotation

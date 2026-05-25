@@ -39,7 +39,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Opera Input Tools',
+    name='Data Batch Entry System',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -58,7 +58,7 @@ exe = EXE(
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
-        name='Opera Input Tools.app',
+        name='Data Batch Entry System.app',
         icon=None,
         bundle_identifier='com.operainputtools.app',
         info_plist={
