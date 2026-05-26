@@ -1,5 +1,6 @@
 """
 Workflow executor - OCR-based dynamic button finding, multi-display, dropdown support.
+Each rule carries its own display index and optional search region.
 """
 import time
 import threading
@@ -20,6 +21,7 @@ def resolve(rule: dict, words: list[dict]) -> tuple[int, int] | None:
     """
     Locate a control using an OCR rule against a word list.
     Returns screenshot pixel coordinates (sx, sy), or None if not found.
+    words are already offset to full-image space when region OCR is used.
     """
     method = rule.get('method', '')
 
@@ -62,21 +64,23 @@ def resolve(rule: dict, words: list[dict]) -> tuple[int, int] | None:
 class WorkflowExecutor:
 
     def __init__(self, button_rules: dict, data_loader, steps: list,
-                 display_index: int = 2, callback=None):
+                 display_index: int = 1, callback=None):
         self.button_rules  = button_rules
         self.data_loader   = data_loader
         self.steps         = steps
-        self.display_index = display_index
+        self.display_index = display_index   # fallback if rule has no display
         self.callback      = callback
 
         self.is_running  = False
         self.should_stop = False
         self._thread     = None
 
-        displays = get_all_displays()
-        self._display = next(
-            (d for d in displays if d['index'] == display_index),
-            displays[-1],
+        # Keep all display info for coordinate conversion
+        all_displays = get_all_displays()
+        self._displays: dict[int, dict] = {d['index']: d for d in all_displays}
+        self._default_display = (
+            self._displays.get(display_index) or
+            all_displays[-1]
         )
 
     def start(self, start_row: int = 0) -> bool:
@@ -119,18 +123,12 @@ class WorkflowExecutor:
             self._log(0, 0, f"Error: {e}")
 
     def _process_row(self, row: dict, idx: int, total: int):
-        img = capture_display(self.display_index)
-        self._display['_img_w'] = img.width
-        self._display['_img_h'] = img.height
-        words = ocr_words(img)
-
         for step in self.steps:
             if self.should_stop:
                 return
-            self._run_step(step, row, words, img, idx, total)
+            self._run_step(step, row, idx, total)
 
-    def _run_step(self, step: dict, row: dict, words: list[dict],
-                  img, idx: int, total: int):
+    def _run_step(self, step: dict, row: dict, idx: int, total: int):
         stype  = step.get('type')
         target = step.get('target')
         col    = step.get('excel_col')
@@ -139,7 +137,7 @@ class WorkflowExecutor:
             value = None
 
         if stype == 'click_type':
-            gx, gy = self._click(target, words)
+            gx, gy = self._click(target)
             if gx is None:
                 return
             self._log(idx+1, total, f"  click  {target} ({gx},{gy}) | {col}={value!r}")
@@ -154,15 +152,16 @@ class WorkflowExecutor:
                 self._type(value)
 
         elif stype == 'select_type':
-            gx, gy = self._click(target, words)
+            rule = self.button_rules.get(target)
+            gx, gy = self._click(target)
             if gx is None:
                 return
             self._log(idx+1, total, f"  select {target} ({gx},{gy}) | {col}={value!r}")
             time.sleep(0.4)
-            self._select_option(value)
+            self._select_option(value, rule)
 
         elif stype == 'click_only':
-            gx, gy = self._click(target, words, double=False)
+            gx, gy = self._click(target, double=False)
             if gx is None:
                 return
             self._log(idx+1, total, f"  click  {target} ({gx},{gy})")
@@ -173,17 +172,38 @@ class WorkflowExecutor:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _click(self, target: str, words: list[dict],
-               double: bool = True) -> tuple[int | None, int | None]:
+    def _display_for(self, rule: dict | None) -> dict:
+        """Return the display dict for a rule (falls back to default)."""
+        if rule:
+            idx = rule.get('display', self.display_index)
+        else:
+            idx = self.display_index
+        return self._displays.get(idx, self._default_display)
+
+    def _capture_for(self, rule: dict | None):
+        """Capture the display specified in rule, run OCR with optional region."""
+        display = self._display_for(rule)
+        idx = display['index']
+        img = capture_display(idx)
+        display['_img_w'] = img.width
+        display['_img_h'] = img.height
+        region = tuple(rule['region']) if rule and rule.get('region') else None
+        words = ocr_words(img, region=region)
+        return img, display, words
+
+    def _click(self, target: str, double: bool = True) -> tuple[int | None, int | None]:
         rule = self.button_rules.get(target)
         if not rule:
             self._log(0, 0, f"  warn: no rule for '{target}'")
             return None, None
+
+        _img, display, words = self._capture_for(rule)
         pos = resolve(rule, words)
         if not pos:
             self._log(0, 0, f"  warn: OCR failed to locate '{target}'")
             return None, None
-        gx, gy = screenshot_to_global(pos[0], pos[1], self._display)
+
+        gx, gy = screenshot_to_global(pos[0], pos[1], display)
         pyautogui.moveTo(gx, gy, duration=0.3)
         time.sleep(0.2)
         pyautogui.click()
@@ -201,14 +221,17 @@ class WorkflowExecutor:
         time.sleep(0.05)
         pyautogui.typewrite(str(value), interval=0.04)
 
-    def _select_option(self, target_value: str):
+    def _select_option(self, target_value: str, rule: dict | None = None):
         """Re-screenshot after dropdown opens (inverted OCR), then click the match."""
         if not target_value:
             return
         time.sleep(0.3)
-        img = capture_display(self.display_index)
-        self._display['_img_w'] = img.width
-        self._display['_img_h'] = img.height
+
+        display = self._display_for(rule)
+        img = capture_display(display['index'])
+        display['_img_w'] = img.width
+        display['_img_h'] = img.height
+        # Dropdown list may extend beyond the annotated region — search without region
         words = ocr_words(img, invert=True)
 
         tl = target_value.strip().lower()
@@ -224,7 +247,7 @@ class WorkflowExecutor:
         gx, gy = screenshot_to_global(
             match['x'] + match['w'] // 2,
             match['y'] + match['h'] // 2,
-            self._display,
+            display,
         )
         pyautogui.moveTo(gx, gy, duration=0.2)
         time.sleep(0.1)

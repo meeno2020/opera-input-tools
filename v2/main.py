@@ -35,6 +35,8 @@ class App:
         self.executor:    WorkflowExecutor    | None = None
         self.v5_executor: V5WorkflowExecutor  | None = None
         self._rules: dict = {}
+        self._library_path   = ''   # path to the loaded button library file
+        self._workflow_path  = ''   # path to the loaded workflow file
 
         self._build()
         self._auto_load()
@@ -101,16 +103,19 @@ class App:
 
     def _tab_annotation(self, nb):
         f = ttk.Frame(nb)
-        nb.add(f, text="Button Annotation")
+        nb.add(f, text="Button Library")
 
         self.locator = ButtonLocatorWidget(f, on_rules_changed=self._rules_changed)
 
         bar = ttk.Frame(f)
         bar.pack(fill=tk.X, padx=6, pady=4)
-        ttk.Button(bar, text="Save Button Config",
+        ttk.Button(bar, text="Save Library",
                    command=self._save_buttons).pack(side=tk.LEFT, padx=4)
-        ttk.Button(bar, text="Load Button Config",
+        ttk.Button(bar, text="Load Library",
                    command=self._load_buttons).pack(side=tk.LEFT, padx=4)
+        self._library_path_var = tk.StringVar(value="No library loaded")
+        ttk.Label(bar, textvariable=self._library_path_var,
+                  foreground='gray').pack(side=tk.LEFT, padx=8)
 
     def _rules_changed(self, rules: dict):
         self._rules = rules
@@ -124,37 +129,38 @@ class App:
 
     def _save_buttons(self):
         fp = filedialog.asksaveasfilename(
-            title="Save Button Config",
+            title="Save Button Library",
+            initialfile="buttons.yaml",
             defaultextension=".yaml",
             filetypes=[("YAML", "*.yaml"), ("All", "*.*")],
         )
         if not fp:
             return
-        try:
-            with open(fp, 'w', encoding='utf-8') as f:
-                yaml.dump({'buttons': self._rules}, f,
-                          allow_unicode=True, default_flow_style=False)
-            messagebox.showinfo("Saved", "Button config saved.")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+        self.wf_config.set_buttons(self._rules)
+        if self.wf_config.save_library(fp):
+            self._library_path = fp
+            self._library_path_var.set(os.path.basename(fp))
+            messagebox.showinfo("Saved", f"Button library saved ({len(self._rules)} buttons).")
+        else:
+            messagebox.showerror("Error", "Save failed.")
 
     def _load_buttons(self):
         fp = filedialog.askopenfilename(
-            title="Load Button Config",
+            title="Load Button Library",
             filetypes=[("YAML", "*.yaml *.yml"), ("All", "*.*")],
         )
         if not fp:
             return
-        try:
-            with open(fp, encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-            rules = data.get('buttons', data) or {}
-            self._rules = rules
-            self.locator.load_rules(rules)
+        if self.wf_config.load_library(fp):
+            self._rules = self.wf_config.get_buttons()
+            self._library_path = fp
+            self._library_path_var.set(os.path.basename(fp))
+            self.locator.load_rules(self._rules)
             self._sync_button_list()
-            messagebox.showinfo("Loaded", f"Loaded {len(rules)} button rule(s).")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showinfo("Loaded",
+                                f"Library loaded: {len(self._rules)} button(s).")
+        else:
+            messagebox.showerror("Error", "Failed to load library.")
 
     # ═════════════════════════════════════════════════════════════════════════
     # Tab 2 – Data File
@@ -301,6 +307,9 @@ class App:
                    command=self._save_wf).pack(side=tk.LEFT, padx=3)
         ttk.Button(sf2, text="Load Workflow",
                    command=self._load_wf).pack(side=tk.LEFT, padx=3)
+        self._workflow_path_var = tk.StringVar(value="No workflow loaded")
+        ttk.Label(sf2, textvariable=self._workflow_path_var,
+                  foreground='gray').pack(side=tk.LEFT, padx=8)
 
     # ── Workflow operations ────────────────────────────────────────────────────
 
@@ -386,34 +395,35 @@ class App:
     def _save_wf(self):
         fp = filedialog.asksaveasfilename(
             title="Save Workflow",
+            initialfile="workflow.yaml",
             defaultextension=".yaml",
             filetypes=[("YAML", "*.yaml"), ("All", "*.*")],
         )
-        if fp:
-            self.wf_config.set_buttons(self._rules)
-            if self.wf_config.save(fp):
-                messagebox.showinfo("Saved", "Workflow saved.")
-            else:
-                messagebox.showerror("Error", "Save failed.")
+        if not fp:
+            return
+        if self.wf_config.save_workflow(fp):
+            self._workflow_path = fp
+            self._workflow_path_var.set(os.path.basename(fp))
+            messagebox.showinfo("Saved",
+                                f"Workflow saved ({self.wf_config.get_step_count()} steps).")
+        else:
+            messagebox.showerror("Error", "Save failed.")
 
     def _load_wf(self):
         fp = filedialog.askopenfilename(
             title="Load Workflow",
             filetypes=[("YAML", "*.yaml *.yml"), ("All", "*.*")],
         )
-        if fp:
-            if self.wf_config.load(fp):
-                self._rules = self.wf_config.get_buttons()
-                self.locator.load_rules(self._rules)
-                self._sync_button_list()
-                self._refresh_wf_list()
-                messagebox.showinfo(
-                    "Loaded",
-                    f"Loaded {self.wf_config.get_step_count()} step(s), "
-                    f"{len(self._rules)} button rule(s).",
-                )
-            else:
-                messagebox.showerror("Error", "Load failed.")
+        if not fp:
+            return
+        if self.wf_config.load_workflow(fp):
+            self._workflow_path = fp
+            self._workflow_path_var.set(os.path.basename(fp))
+            self._refresh_wf_list()
+            messagebox.showinfo("Loaded",
+                                f"Workflow loaded: {self.wf_config.get_step_count()} step(s).")
+        else:
+            messagebox.showerror("Error", "Load failed.")
 
     # ── Drag & drop ───────────────────────────────────────────────────────────
 
@@ -681,12 +691,23 @@ class App:
     # ═════════════════════════════════════════════════════════════════════════
 
     def _auto_load(self):
-        for name in ('workflow.yaml', 'workflow.yml'):
+        # Button library
+        for name in ('buttons.yaml', 'buttons.yml'):
             if os.path.exists(name):
-                if self.wf_config.load(name):
+                if self.wf_config.load_library(name):
                     self._rules = self.wf_config.get_buttons()
+                    self._library_path = name
+                    self._library_path_var.set(name)
                     self.locator.load_rules(self._rules)
                     self._sync_button_list()
+                break
+
+        # Workflow steps (load_workflow tolerates old combined format)
+        for name in ('workflow.yaml', 'workflow.yml'):
+            if os.path.exists(name):
+                if self.wf_config.load_workflow(name):
+                    self._workflow_path = name
+                    self._workflow_path_var.set(name)
                     self._refresh_wf_list()
                 break
 

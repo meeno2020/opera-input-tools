@@ -29,7 +29,7 @@ def get_all_displays() -> list[dict]:
     if not _MSS:
         return [{'index': 1, 'logical_x': 0, 'logical_y': 0,
                  'logical_w': 1920, 'logical_h': 1080}]
-    with mss.mss() as sct:
+    with mss.MSS() as sct:
         result = []
         for i, mon in enumerate(sct.monitors[1:], 1):   # monitors[0] = all combined
             result.append({
@@ -44,7 +44,7 @@ def get_all_displays() -> list[dict]:
 
 def capture_display(display_index: int) -> Image.Image:
     """Capture a specific display (1-based index). Returns PIL Image (RGB)."""
-    with mss.mss() as sct:
+    with mss.MSS() as sct:
         mon = sct.monitors[display_index]
         raw = sct.grab(mon)
         return Image.frombytes('RGB', raw.size, raw.bgra, 'raw', 'BGRX')
@@ -63,12 +63,20 @@ def screenshot_to_global(px: float, py: float, display: dict) -> tuple[int, int]
     )
 
 
-def ocr_words(pil_img: Image.Image, invert: bool = False) -> list[dict]:
+def ocr_words(pil_img: Image.Image, invert: bool = False,
+              region: tuple[int, int, int, int] | None = None) -> list[dict]:
     """
     Run OCR on an image and return word list.
+    region=(x, y, w, h) in image pixels — crops before OCR for higher accuracy;
+    returned coordinates are offset back to full-image space.
     Set invert=True for dark-background dropdowns.
     """
     img = pil_img.convert('RGB')
+    offset_x, offset_y = 0, 0
+    if region:
+        rx, ry, rw, rh = region
+        img = img.crop((rx, ry, rx + rw, ry + rh))
+        offset_x, offset_y = rx, ry
     if invert:
         img = ImageOps.invert(img)
     enhanced = ImageEnhance.Contrast(img).enhance(2.0)
@@ -80,8 +88,8 @@ def ocr_words(pil_img: Image.Image, invert: bool = False) -> list[dict]:
     return [
         {
             'text': data['text'][i].strip(),
-            'x':    data['left'][i],
-            'y':    data['top'][i],
+            'x':    data['left'][i] + offset_x,
+            'y':    data['top'][i] + offset_y,
             'w':    data['width'][i],
             'h':    data['height'][i],
             'conf': data['conf'][i],
